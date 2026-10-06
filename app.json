@@ -1,0 +1,120 @@
+{
+  "$schema": "https://hearthscale.com/app.schema.json",
+  "id": "whiteboard",
+  "name": "Whiteboard",
+  "version": "1.0.0",
+  "api": 6,
+  "icon": {
+    "light": "assets/icon-light.svg",
+    "dark": "assets/icon-dark.svg"
+  },
+  "description": "A whiteboard for sketches and diagrams: Excalidraw in a tab of its own, kept in this app. Your apps' agents read the board, draw shapes, labels and arrows on it, and look at it with you.",
+  "license": "MIT",
+  "categories": ["design"],
+  "payment": "free",
+  "environment": {
+    "kind": "process",
+    "network": ["excalidraw.com", "excalidraw.nyc3.cdn.digitaloceanspaces.com"]
+  },
+  "uses": ["surface"],
+  "surfaces": [
+    {
+      "id": "board",
+      "kind": "web",
+      "title": "Whiteboard",
+      "entry": "https://excalidraw.com/",
+      "placements": ["rail", "tab"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "contents",
+      "title": "Read the whiteboard",
+      "description": "Read what the whiteboard holds: each shape with its id, kind, words, position and size, each arrow with the shapes it joins, and each free text. Positions are in the board's own units, x to the right and y down.",
+      "input": { "type": "object", "properties": {} },
+      "mutating": false,
+      "outbound": true,
+      "icon": "view"
+    },
+    {
+      "name": "draw",
+      "title": "Draw on the whiteboard",
+      "description": "Draw shapes on the whiteboard, to the right of what it holds, and show them to the person. A rectangle, an ellipse or a diamond holds its label inside; a text is free words; an arrow joins two shapes of the same call, named by their key, and may carry a label. Give x and y to lay shapes out yourself, in board units relative to each other; shapes without them go in a row from left to right. The person can move, change or undo everything you draw.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "shapes": {
+            "type": "array",
+            "description": "The shapes to draw, arrows after the shapes they join",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["rectangle", "ellipse", "diamond", "text", "arrow"]
+                },
+                "x": {
+                  "type": "number",
+                  "description": "Left edge, in board units"
+                },
+                "y": {
+                  "type": "number",
+                  "description": "Top edge, in board units"
+                },
+                "width": {
+                  "type": "number",
+                  "description": "Width, in board units"
+                },
+                "height": {
+                  "type": "number",
+                  "description": "Height, in board units"
+                },
+                "key": {
+                  "type": "string",
+                  "description": "A name of your own for the shape, which an arrow's from and to name"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "The words inside the shape or on the arrow, or the text itself"
+                },
+                "from": {
+                  "type": "string",
+                  "description": "For an arrow: the key of its first shape"
+                },
+                "to": {
+                  "type": "string",
+                  "description": "For an arrow: the key of its second shape"
+                },
+                "color": {
+                  "type": "string",
+                  "description": "The line and text colour, as #rrggbb"
+                },
+                "fill": {
+                  "type": "string",
+                  "description": "The fill colour of a shape, as #rrggbb"
+                }
+              },
+              "required": ["kind"]
+            }
+          }
+        },
+        "required": ["shapes"]
+      },
+      "mutating": true,
+      "outbound": true,
+      "icon": "pen"
+    },
+    {
+      "name": "look",
+      "title": "Look at the whiteboard",
+      "description": "See the whiteboard as the person sees it, as a picture.",
+      "input": { "type": "object", "properties": {} },
+      "mutating": false,
+      "outbound": true,
+      "icon": "image"
+    }
+  ],
+  "capabilities": {
+    "tools": ["contents", "draw", "look"]
+  }
+}
