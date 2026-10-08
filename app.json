@@ -2,7 +2,7 @@
   "$schema": "https://hearthscale.com/app.schema.json",
   "id": "whiteboard",
   "name": "Whiteboard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "api": 6,
   "icon": {
     "light": "assets/icon-light.svg",
@@ -23,7 +23,8 @@
       "kind": "web",
       "title": "Whiteboard",
       "entry": "https://excalidraw.com/",
-      "placements": ["rail", "tab"]
+      "placements": ["rail", "tab"],
+      "storage": { "excalidraw-theme": "system" }
     }
   ],
   "tools": [

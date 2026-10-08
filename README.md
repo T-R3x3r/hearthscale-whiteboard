@@ -22,6 +22,12 @@ host is refused: the site's visitor counter and error reports do not load,
 and sharing a board by link or live collaboration, which need Excalidraw's
 servers, do not work.
 
+The board wears Hearthscale's look, dark or light. The surface's
+`storage` sets Excalidraw's own theme to follow the system's each time
+the board opens, and Hearthscale gives every page the window's scheme as
+the system's, so the board turns with the window when the person changes
+the look.
+
 ## What the agent can do
 
 | Tool       | What it does                                                                                                                             |
@@ -40,7 +46,7 @@ changes the person's board, so it is `mutating`.
 
 | File         | What it is                                                                                       |
 | ------------ | ------------------------------------------------------------------------------------------------ |
-| `app.json`   | The manifest: the `web` surface, the two hosts, the three tools.                                 |
+| `app.json`   | The manifest: the `web` surface with its theme, the two hosts, the three tools.                  |
 | `backend.js` | The tools: shapes laid out and turned into Excalidraw's elements, and the scripts the page runs. |
 | `assets/`    | The app's mark, for light and dark (Remix Icon `shapes-line`).                                   |
 
