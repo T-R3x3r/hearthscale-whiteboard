@@ -370,6 +370,7 @@ module.exports = {
       const drawing = elementsOf(shapes);
       const { added } = await inPage(drawInPage, drawing);
       if (added === 0) throw new Error('the board took none of the shapes');
+      await held.surface.command('show', {});
       return `Drew ${shapes.length} shape${shapes.length === 1 ? '' : 's'} on the whiteboard, to the right of what it held, and showed them to the person.`;
     },
     async look() {
