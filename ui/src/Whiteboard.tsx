@@ -128,6 +128,24 @@ export function Whiteboard({
     [api, boards],
   );
 
+  const showing = useRef(show);
+  showing.current = show;
+  /** Who waits for the session of a board the view is about to show. */
+  const arrivals = useRef(new Map<string, (session: BoardSession) => void>());
+  useEffect(() => {
+    arrivals.current.get(session.id)?.(session);
+    arrivals.current.delete(session.id);
+  }, [session]);
+
+  /** Shows a board for an agent, and answers its session once Excalidraw
+   *  shows it. */
+  const showFor = useCallback(async (id: string): Promise<BoardSession> => {
+    if (current.current.id === id) return current.current;
+    const arrived = new Promise<BoardSession>((resolve) => arrivals.current.set(id, resolve));
+    await showing.current(id, true);
+    return arrived;
+  }, []);
+
   const open = useCallback(
     (board: BoardEntry) => {
       if (board.id === current.current.id) return;
@@ -187,9 +205,9 @@ export function Whiteboard({
         const on = current.current;
         const answered = (async () => {
           if (event.name === 'drawn' && asked.elements) {
-            if (asked.board !== on.id) return;
-            await on.whenReady();
-            on.drawn(asked.elements);
+            const drawnOn = await showFor(asked.board);
+            await drawnOn.whenReady();
+            drawnOn.drawn(asked.elements);
             await platform.answer({ request });
           } else if (event.name === 'look') {
             try {
@@ -212,7 +230,7 @@ export function Whiteboard({
           current.current.fail("An agent's request was not answered", e),
         );
       }),
-    [platform, boards],
+    [platform, boards, showFor],
   );
 
   // The other views of the app on this computer.

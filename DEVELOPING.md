@@ -79,8 +79,8 @@ board, its scroll and zoom, is the tab's widget state.
 
 `contents` reads the store. `draw` adds its elements to the store, so a
 board that is not open has them when it opens, and sends the views the
-event `drawn`: a view that shows the board adds them as one step the
-person can undo and brings them into view. `look` sends the event `look`:
+event `drawn`: each open view shows that board, adds them as one step
+the person can undo and brings them into view. `look` sends the event `look`:
 a view draws the board's picture with Excalidraw's export and keeps it as
 an asset of the app. A view answers both through the tool `answer`, which
 only the app's views may call; with no view open, `draw` says the person
