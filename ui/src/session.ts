@@ -81,12 +81,18 @@ export class BoardSession {
   private hash: number;
   private timer = 0;
   private chain: Promise<void> = Promise.resolve();
+  /** Why the last keep failed; null while the store holds the board as
+   *  the view shows it. */
+  private failure: unknown = null;
 
+  /** `unsaved` hears each change of the failure: its cause, or null once a
+   *  keep succeeds again. */
   constructor(
     readonly id: string,
     elements: readonly ExcalidrawElement[],
     private readonly boards: Boards,
     private readonly channel: BroadcastChannel,
+    private readonly unsaved: (failure: unknown) => void,
   ) {
     this.hash = hashElementsVersion(restoreElements(elements, null));
     this.ready = new Promise((resolve) => (this.markReady = resolve));
@@ -116,7 +122,8 @@ export class BoardSession {
     this.timer = window.setTimeout(() => void this.keep(), KEEP_AFTER_MS);
   }
 
-  /** Keeps the board now, after the keeps before it. */
+  /** Keeps the board now, after the keeps before it. A keep that fails
+   *  leaves the drawing on screen, and the next change tries again. */
   keep(): Promise<void> {
     clearTimeout(this.timer);
     this.timer = 0;
@@ -124,13 +131,24 @@ export class BoardSession {
       () => this.write(),
       () => this.write(),
     );
-    return this.chain.catch((e: unknown) => this.fail('The board was not kept', e));
+    return this.chain.then(
+      () => this.settle(null),
+      (e: unknown) => this.settle(e),
+    );
   }
 
-  /** Keeps a change that waits, before the view lets the board go. */
+  private settle(failure: unknown): void {
+    if (failure === this.failure) return;
+    this.failure = failure;
+    this.unsaved(failure);
+  }
+
+  /** Keeps a change that waits, before the view lets the board go; throws
+   *  the cause while the board is not kept. */
   async flush(): Promise<void> {
     if (this.timer) await this.keep();
     else await this.chain.catch(() => {});
+    if (this.failure !== null) throw this.failure;
   }
 
   /** Stops keeping the board, which was deleted. */

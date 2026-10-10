@@ -4,10 +4,36 @@
 
 html,
 body,
-.wb-root {
+.wb-root,
+.wb-stage {
   height: 100%;
   margin: 0;
   overflow: hidden;
+}
+
+.wb-stage {
+  position: relative;
+}
+
+/* The notice of a board that is not saved, under Excalidraw's toolbar,
+   over the canvas and under Excalidraw's dialogs; the board around it
+   takes the pointer. */
+.wb-unsaved {
+  position: absolute;
+  top: calc(var(--space) * 18);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  padding: 0 calc(var(--space) * 4);
+  pointer-events: none;
+}
+
+.wb-unsaved-card {
+  max-width: calc(var(--space) * 120);
+  box-shadow: var(--shadow-float);
+  pointer-events: auto;
 }
 
 /* Excalidraw's own variables, from the kit's tokens, so a theme and a

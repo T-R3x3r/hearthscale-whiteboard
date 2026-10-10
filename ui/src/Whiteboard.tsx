@@ -24,7 +24,7 @@ import type {
   UIOptions,
 } from '@excalidraw/excalidraw/types';
 import { BOARDS, BoardList } from './BoardList.tsx';
-import type { BoardEntry, Boards } from './boards.ts';
+import { BoardTooLarge, type BoardEntry, type Boards } from './boards.ts';
 import type { AppEvent, Platform } from './platform.ts';
 import { BoardSession, CHANNEL, picture } from './session.ts';
 
@@ -90,6 +90,46 @@ function askedOf(event: AppEvent): Asked | null {
 
 const words = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** Whether the board on screen is saved, after the change that waits;
+ *  its notice says why when it is not. */
+async function kept(session: BoardSession): Promise<boolean> {
+  try {
+    await session.flush();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The words of a keep that failed: what happened, and what the person
+ *  can do. */
+function unsavedWords(failure: unknown): string {
+  if (failure instanceof BoardTooLarge) {
+    return `This board is not saved: it takes ${failure.size}, and a board can take ${BoardTooLarge.limit} at most. Delete large parts of it, or cut a part and paste it on a new board. Your drawing stays on screen, and it is saved as soon as it is small enough.`;
+  }
+  const cause = words(failure)
+    .replace(/^MCP error -?\d+: /, '')
+    .replace(/\.+$/, '');
+  return `This board is not saved: ${cause}. Your drawing stays on screen, and Whiteboard tries again with your next change.`;
+}
+
+/** The notice over the board while the store does not hold it as the
+ *  person sees it. */
+function UnsavedNotice({ failure }: { failure: unknown }) {
+  return (
+    <div className="wb-unsaved">
+      <div className="hs-card wb-unsaved-card" data-tone="warn" role="alert">
+        <div className="hs-notice-row" data-tone="bad">
+          <span className="hs-work-mark">
+            <i aria-hidden="true" className="hs-icon ri-error-warning-line wb-icon" />
+          </span>
+          <span className="hs-notice-text">{unsavedWords(failure)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Whiteboard({
   platform,
   boards,
@@ -104,9 +144,10 @@ export function Whiteboard({
   const [shown, setShown] = useState(first.shown);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [docked, setDocked] = useState(false);
+  const [unsaved, setUnsaved] = useState<unknown>(null);
   const channel = useMemo(() => new BroadcastChannel(CHANNEL), []);
   const session = useMemo(
-    () => new BoardSession(shown.id, shown.elements, boards, channel),
+    () => new BoardSession(shown.id, shown.elements, boards, channel, setUnsaved),
     [shown, boards, channel],
   );
   const current = useRef(session);
@@ -116,14 +157,21 @@ export function Whiteboard({
   const viewports = useRef(new Map(first.viewport ? [[first.viewport.board, first.viewport]] : []));
   const viewportTimer = useRef(0);
 
+  /** Shows another board; answers false, and keeps the board on screen,
+   *  while that board is not saved, which its notice says. */
   const show = useCallback(
-    async (id: string, keepFirst: boolean) => {
+    async (id: string, keepFirst: boolean): Promise<boolean> => {
       const sidebar = api?.getAppState().openSidebar ?? null;
-      if (keepFirst) await current.current.flush();
-      else current.current.discard();
+      if (keepFirst) {
+        if (!(await kept(current.current))) return false;
+      } else {
+        current.current.discard();
+      }
       const [elements, library] = await Promise.all([boards.elements(id), boards.library()]);
       await boards.setOpen(id);
+      setUnsaved(null);
       setShown({ id, elements, library, sidebar });
+      return true;
     },
     [api, boards],
   );
@@ -138,11 +186,14 @@ export function Whiteboard({
   }, [session]);
 
   /** Shows a board for an agent, and answers its session once Excalidraw
-   *  shows it. */
-  const showFor = useCallback(async (id: string): Promise<BoardSession> => {
+   *  shows it; null while the board on screen is not saved. */
+  const showFor = useCallback(async (id: string): Promise<BoardSession | null> => {
     if (current.current.id === id) return current.current;
     const arrived = new Promise<BoardSession>((resolve) => arrivals.current.set(id, resolve));
-    await showing.current(id, true);
+    if (!(await showing.current(id, true))) {
+      arrivals.current.delete(id);
+      return null;
+    }
     return arrived;
   }, []);
 
@@ -155,6 +206,7 @@ export function Whiteboard({
   );
 
   const create = useCallback(async () => {
+    if (!(await kept(current.current))) return;
     const made = await boards.create();
     setList(made.boards);
     channel.postMessage({ listed: true } satisfies Told);
@@ -206,6 +258,7 @@ export function Whiteboard({
         const answered = (async () => {
           if (event.name === 'drawn' && asked.elements) {
             const drawnOn = await showFor(asked.board);
+            if (!drawnOn) return;
             await drawnOn.whenReady();
             drawnOn.drawn(asked.elements);
             await platform.answer({ request });
@@ -286,79 +339,86 @@ export function Whiteboard({
   const name = list.find((b) => b.id === shown.id)?.name ?? '';
 
   return (
-    <Excalidraw
-      key={shown.id}
-      excalidrawAPI={(made) => {
-        session.attach(made);
-        setApi(made);
-      }}
-      initialData={initialData}
-      onChange={(elements, appState) => session.changed(elements, appState)}
-      onLibraryChange={(items) =>
-        boards.setLibrary(items).catch((e: unknown) => session.fail('The library was not kept', e))
-      }
-      onScrollChange={(scrollX, scrollY, zoom) => {
-        const seen = { board: shown.id, scrollX, scrollY, zoom: zoom.value };
-        viewports.current.set(shown.id, seen);
-        clearTimeout(viewportTimer.current);
-        viewportTimer.current = window.setTimeout(
-          () =>
-            platform
-              .setWidgetState(seen)
-              .catch((e: unknown) => session.fail('The view of the board was not kept', e)),
-          VIEWPORT_AFTER_MS,
-        );
-      }}
-      onLinkOpen={(element, event) => {
-        const link = element.link;
-        if (!link || isElementLink(link)) return;
-        event.preventDefault();
-        platform.openLink(link).catch((e: unknown) => session.fail('The link did not open', e));
-      }}
-      theme={theme}
-      name={name}
-      langCode="en"
-      UIOptions={UI}
-      aiEnabled={false}
-      validateEmbeddable={false}
-      handleKeyboardGlobally
-    >
-      <MainMenu>
-        <MainMenu.Item
-          icon={<i aria-hidden="true" className="hs-icon ri-add-line wb-icon" />}
-          onSelect={() =>
+    <div className="wb-stage">
+      <Excalidraw
+        key={shown.id}
+        excalidrawAPI={(made) => {
+          session.attach(made);
+          setApi(made);
+        }}
+        initialData={initialData}
+        onChange={(elements, appState) => session.changed(elements, appState)}
+        onLibraryChange={(items) =>
+          boards
+            .setLibrary(items)
+            .catch((e: unknown) => session.fail('The library was not kept', e))
+        }
+        onScrollChange={(scrollX, scrollY, zoom) => {
+          const seen = { board: shown.id, scrollX, scrollY, zoom: zoom.value };
+          viewports.current.set(shown.id, seen);
+          clearTimeout(viewportTimer.current);
+          viewportTimer.current = window.setTimeout(
+            () =>
+              platform
+                .setWidgetState(seen)
+                .catch((e: unknown) => session.fail('The view of the board was not kept', e)),
+            VIEWPORT_AFTER_MS,
+          );
+        }}
+        onLinkOpen={(element, event) => {
+          const link = element.link;
+          if (!link || isElementLink(link)) return;
+          event.preventDefault();
+          platform.openLink(link).catch((e: unknown) => session.fail('The link did not open', e));
+        }}
+        theme={theme}
+        name={name}
+        langCode="en"
+        UIOptions={UI}
+        aiEnabled={false}
+        validateEmbeddable={false}
+        handleKeyboardGlobally
+      >
+        <MainMenu>
+          <MainMenu.Item
+            icon={<i aria-hidden="true" className="hs-icon ri-add-line wb-icon" />}
+            onSelect={() =>
+              void create().catch((e: unknown) => session.fail('The board was not made', e))
+            }
+          >
+            New board
+          </MainMenu.Item>
+          <MainMenu.Item
+            icon={<i aria-hidden="true" className="hs-icon ri-stack-line wb-icon" />}
+            onSelect={() => api?.toggleSidebar({ name: BOARDS, force: true })}
+          >
+            Boards
+          </MainMenu.Item>
+          <MainMenu.Separator />
+          <MainMenu.DefaultItems.SearchMenu />
+          <MainMenu.DefaultItems.Help />
+          <MainMenu.DefaultItems.ClearCanvas />
+        </MainMenu>
+        <BoardList
+          boards={list}
+          open={shown.id}
+          docked={docked}
+          onDock={setDocked}
+          onNew={() =>
             void create().catch((e: unknown) => session.fail('The board was not made', e))
           }
-        >
-          New board
-        </MainMenu.Item>
-        <MainMenu.Item
-          icon={<i aria-hidden="true" className="hs-icon ri-stack-line wb-icon" />}
-          onSelect={() => api?.toggleSidebar({ name: BOARDS, force: true })}
-        >
-          Boards
-        </MainMenu.Item>
-        <MainMenu.Separator />
-        <MainMenu.DefaultItems.SearchMenu />
-        <MainMenu.DefaultItems.Help />
-        <MainMenu.DefaultItems.ClearCanvas />
-      </MainMenu>
-      <BoardList
-        boards={list}
-        open={shown.id}
-        docked={docked}
-        onDock={setDocked}
-        onNew={() => void create().catch((e: unknown) => session.fail('The board was not made', e))}
-        onOpen={open}
-        onRename={(board, next) =>
-          void rename(board, next).catch((e: unknown) =>
-            session.fail('The board was not renamed', e),
-          )
-        }
-        onDelete={(board) =>
-          void remove(board).catch((e: unknown) => session.fail('The board was not deleted', e))
-        }
-      />
-    </Excalidraw>
+          onOpen={open}
+          onRename={(board, next) =>
+            void rename(board, next).catch((e: unknown) =>
+              session.fail('The board was not renamed', e),
+            )
+          }
+          onDelete={(board) =>
+            void remove(board).catch((e: unknown) => session.fail('The board was not deleted', e))
+          }
+        />
+      </Excalidraw>
+      {unsaved !== null && <UnsavedNotice failure={unsaved} />}
+    </div>
   );
 }

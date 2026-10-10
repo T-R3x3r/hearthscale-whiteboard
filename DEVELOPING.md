@@ -57,7 +57,7 @@ reads too:
 | ------------ | ---------------------------------------------------------------- |
 | `boards`     | Each board's id and name, in the order they were made.           |
 | `open`       | The board opened last, which an agent reads and draws on.        |
-| `board:<id>` | A board's elements, a deleted element for a day after.           |
+| `board:<id>` | A board's elements; a deleted one for a day, as a tombstone.     |
 | `library`    | The library of shapes.                                           |
 | `looked`     | The asset of the board's last picture, which the next one frees. |
 
@@ -68,6 +68,20 @@ change another view or an agent made meanwhile stays. The views of the
 app on one computer tell each other of each keep on a `BroadcastChannel`,
 so two tabs of the board show the same drawing. Where a tab looked at its
 board, its scroll and zoom, is the tab's widget state.
+
+A deleted element is kept for a day as a tombstone: its id, version and
+place, enough for a merge, so a deletion frees the room the element took.
+
+One store write of a view carries 2 MiB at most, and the client answers a
+larger one as if the platform had stopped. The view therefore measures a
+board before it writes it and sends none that is larger. A keep that
+fails, for that or any other cause, shows a notice over the board, in the
+kit's card and notice row: the cause in words, and what the person can
+do. The drawing stays on screen, the next change tries again, and the
+notice goes once a keep succeeds. While the board is not saved, the view
+opens no other board over it. The backend writes in its own process, with
+no such limit, so an agent's drawing can make a board larger than a view
+can keep; the notice then says so at the next change.
 
 ## What the agent can do
 
