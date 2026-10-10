@@ -2,29 +2,25 @@
   "$schema": "https://hearthscale.com/app.schema.json",
   "id": "whiteboard",
   "name": "Whiteboard",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "api": 6,
   "icon": {
     "light": "assets/icon-light.svg",
     "dark": "assets/icon-dark.svg"
   },
-  "description": "A whiteboard for sketches and diagrams: Excalidraw in a tab of its own, kept in this app. Your apps' agents read the board, draw shapes, labels and arrows on it, and look at it with you.",
+  "description": "A whiteboard for sketches and diagrams, built on Excalidraw and kept on this computer, with as many boards as you like. Your apps' agents read the board, draw shapes, labels and arrows on it, and look at it with you.",
   "license": "MIT",
   "categories": ["design"],
   "payment": "free",
-  "environment": {
-    "kind": "process",
-    "network": ["excalidraw.com", "excalidraw.nyc3.cdn.digitaloceanspaces.com"]
-  },
-  "uses": ["surface"],
+  "environment": { "kind": "process" },
+  "uses": ["store", "events"],
   "surfaces": [
     {
       "id": "board",
-      "kind": "web",
+      "kind": "view",
       "title": "Whiteboard",
-      "entry": "https://excalidraw.com/",
-      "placements": ["rail", "tab"],
-      "storage": { "excalidraw-theme": "system" }
+      "entry": "views/board.js",
+      "placements": ["rail", "tab"]
     }
   ],
   "tools": [
@@ -34,7 +30,7 @@
       "description": "Read what the whiteboard holds: each shape with its id, kind, words, position and size, each arrow with the shapes it joins, and each free text. Positions are in the board's own units, x to the right and y down.",
       "input": { "type": "object", "properties": {} },
       "mutating": false,
-      "outbound": true,
+      "outbound": false,
       "icon": "view"
     },
     {
@@ -102,17 +98,34 @@
         "required": ["shapes"]
       },
       "mutating": true,
-      "outbound": true,
+      "outbound": false,
       "icon": "pen"
     },
     {
       "name": "look",
       "title": "Look at the whiteboard",
-      "description": "See the whiteboard as the person sees it, as a picture.",
+      "description": "See the whiteboard as the person sees it, as a picture of everything it holds.",
       "input": { "type": "object", "properties": {} },
       "mutating": false,
-      "outbound": true,
+      "outbound": false,
       "icon": "image"
+    },
+    {
+      "name": "answer",
+      "title": "Answer for the board",
+      "description": "The board's view answers a request of the backend: that it showed a drawing, or with the board's picture.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "request": { "type": "string", "description": "The request the view answers" },
+          "asset": { "type": "string", "description": "The asset of the board's picture" },
+          "error": { "type": "string", "description": "Why the view could not answer" }
+        },
+        "required": ["request"]
+      },
+      "mutating": false,
+      "outbound": false,
+      "visibility": ["app"]
     }
   ],
   "capabilities": {

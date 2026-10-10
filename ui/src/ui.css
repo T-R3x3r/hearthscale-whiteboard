@@ -1,0 +1,193 @@
+/* The Whiteboard view's own rules, over Excalidraw's sheet and the kit the
+   platform loads into the view. Every colour, corner, type size and gap is
+   a token of the kit. */
+
+html,
+body,
+.wb-root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Excalidraw's own variables, from the kit's tokens, so a theme and a
+   colourway reach the board's menus and tools as they reach the window.
+   The canvas has no plate of its own: the tab's shows through it. */
+.hs-view .excalidraw,
+.hs-view .excalidraw.theme--dark {
+  --ui-font: var(--font-app);
+  --default-bg-color: transparent;
+  --island-bg-color: var(--card);
+  --popup-bg-color: var(--card);
+  --sidebar-bg-color: var(--card);
+  --overlay-bg-color: var(--scrim-soft);
+  --color-surface-lowest: var(--win);
+  --color-surface-low: var(--card);
+  --color-surface-mid: var(--card);
+  --color-surface-high: var(--hov);
+  --color-on-surface: var(--text);
+  --text-primary-color: var(--text);
+  --popup-text-color: var(--text);
+  --icon-fill-color: var(--text);
+  --input-label-color: var(--mut);
+  --keybinding-color: var(--dim);
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent);
+  --color-primary-darkest: var(--accent);
+  --color-primary-hover: var(--accent);
+  --color-brand-hover: var(--accent);
+  --color-brand-active: var(--accent);
+  --color-primary-light: var(--btnhov);
+  --color-primary-light-darker: var(--btnhov);
+  --color-surface-primary-container: var(--btnhov);
+  --color-on-primary-container: var(--text);
+  --select-highlight-color: var(--accent);
+  --focus-highlight-color: var(--btnhov);
+  --link-color: var(--link);
+  --button-hover-bg: var(--hov);
+  --button-active-bg: var(--btnhov);
+  --button-active-border: var(--accent);
+  --default-border-color: var(--cardb);
+  --dialog-border-color: var(--cardb);
+  --sidebar-border-color: var(--cardb);
+  --input-bg-color: var(--win);
+  --input-border-color: var(--cardb);
+  --input-hover-bg-color: var(--hov);
+  --popup-secondary-bg-color: var(--hov);
+  --scrollbar-thumb: var(--scroll);
+  --scrollbar-thumb-hover: var(--scrollhov);
+  --border-radius-md: var(--r-sm);
+  --border-radius-lg: var(--r-ctl);
+  --shadow-island: var(--ring), var(--shadow-pop);
+  --modal-shadow: var(--shadow-modal);
+  --sidebar-shadow: var(--shadow-float);
+}
+
+/* Excalidraw's parts that reach its site, the public libraries or the
+   computer's files, which a view does not, and the context menu's
+   Paste and Copy to clipboard as PNG, which read the clipboard and write
+   a picture to it, which a view may not. A paste with the keys works. */
+.hs-view .HelpDialog__header,
+.hs-view .library-menu-browse-button,
+.hs-view .library-menu-items-container__header--excal,
+.hs-view .excalidraw .dropdown-menu [data-testid='lib-dropdown--load'],
+.hs-view .excalidraw .dropdown-menu [data-testid='lib-dropdown--export'],
+.hs-view .excalidraw .dropdown-menu [data-testid='lib-dropdown--remove'],
+.hs-view .context-menu [data-testid='paste'],
+.hs-view .context-menu [data-testid='copyAsPng'] {
+  display: none;
+}
+
+/* The empty list of the public libraries' shapes under their heading,
+   whose inline style only an important rule outweighs. */
+.hs-view .library-menu-items-container__header--excal + div {
+  display: none !important;
+}
+
+/* The sidebar's tab in front and the library's headings, as the shell
+   marks a choice and a heading. */
+.hs-view .excalidraw .sidebar-tab-trigger[data-state='active'] {
+  color: var(--text);
+  background-color: var(--btnhov);
+}
+
+.hs-view .excalidraw .library-menu-items-container__header {
+  color: var(--text);
+}
+
+/* The context menu's rows and lines, as the shell's menus draw them. */
+.hs-view .excalidraw .context-menu-item:hover {
+  color: var(--text);
+  background-color: var(--hov);
+}
+
+.hs-view .excalidraw .context-menu-item-separator {
+  border-top-color: var(--cardb);
+}
+
+.hs-view .context-menu > [data-testid='paste']:first-child + .context-menu-item-separator {
+  display: none;
+}
+
+/* A Remix Icon in a menu row or a button, the size of Excalidraw's own
+   marks. */
+.wb-icon {
+  font-size: calc(var(--space) * 4);
+  line-height: 1;
+}
+
+/* The boards. */
+.wb-boards-title {
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+}
+
+.wb-boards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-stack);
+  min-height: 0;
+  padding: var(--space) calc(var(--space) * 3) calc(var(--space) * 3);
+  overflow-y: auto;
+}
+
+.wb-boards-new {
+  align-self: flex-start;
+}
+
+.wb-board-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-ladder);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wb-board {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-ladder);
+  padding-right: var(--space);
+  border-radius: var(--r-sm);
+}
+
+.wb-board:hover {
+  background: var(--hov);
+}
+
+.wb-board[aria-current='true'] {
+  background: var(--btnhov);
+}
+
+.wb-board-name {
+  flex: 1;
+  min-width: 0;
+  height: var(--h-ctl);
+  padding: var(--pad-ctl);
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-row);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.wb-board-act {
+  visibility: hidden;
+}
+
+.wb-board:hover .wb-board-act,
+.wb-board:focus-within .wb-board-act {
+  visibility: visible;
+}
+
+.wb-board-field {
+  flex: 1;
+  min-width: 0;
+}
