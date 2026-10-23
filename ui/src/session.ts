@@ -5,9 +5,10 @@
  *
  * A change is kept a moment after the drawing stops. Each keep reads the
  * board as the store holds it first and merges it in, element by element,
- * so a change another view or an agent made in the meantime stays; then
- * it tells the other views of the app on this computer, which take the
- * board in again.
+ * so a change another view or an agent made in the meantime stays; keeps
+ * the pictures the board shows before the board that shows them; then it
+ * tells the other views of the app on this computer, which take the board
+ * in again with the pictures they lack.
  */
 import {
   CaptureUpdateAction,
@@ -20,8 +21,9 @@ import type {
   ExcalidrawElement,
   NonDeletedExcalidrawElement,
 } from '@excalidraw/excalidraw/element/types';
-import type { AppState, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types';
+import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types';
 import { kept, merged, type Boards } from './boards.ts';
+import type { Pictures } from './pictures.ts';
 import type { Platform } from './platform.ts';
 
 /** How long after the last change a board is kept. */
@@ -47,18 +49,19 @@ function blobBase64(blob: Blob): Promise<string> {
   });
 }
 
-/** A picture of elements, in the person's scheme, at most `PICTURE_SIDE`
- *  pixels on its longer side, kept as an asset of the app; null for no
- *  elements. */
+/** A picture of elements and the pictures they show, in the person's
+ *  scheme, at most `PICTURE_SIDE` pixels on its longer side, kept as an
+ *  asset of the app; null for no elements. */
 export async function picture(
   elements: readonly NonDeletedExcalidrawElement[],
+  files: BinaryFiles,
   dark: boolean,
   platform: Platform,
 ): Promise<string | null> {
   if (elements.length === 0) return null;
   const blob = await exportToBlob({
     elements,
-    files: null,
+    files,
     mimeType: 'image/png',
     exportPadding: PICTURE_MARGIN,
     appState: { exportBackground: true, viewBackgroundColor: '#ffffff', exportWithDarkMode: dark },
@@ -91,6 +94,7 @@ export class BoardSession {
     readonly id: string,
     elements: readonly ExcalidrawElement[],
     private readonly boards: Boards,
+    private readonly pictures: Pictures,
     private readonly channel: BroadcastChannel,
     private readonly unsaved: (failure: unknown) => void,
   ) {
@@ -167,6 +171,7 @@ export class BoardSession {
     if (hashElementsVersion(all) !== hashElementsVersion(local)) {
       api.updateScene({ elements: all, captureUpdate: CaptureUpdateAction.NEVER });
     }
+    await this.pictures.keep(all, api.getFiles());
     await this.boards.write(this.id, kept(all));
     this.hash = hashElementsVersion(all);
     this.channel.postMessage({ board: this.id });
@@ -184,6 +189,8 @@ export class BoardSession {
       api.updateScene({ elements: all, captureUpdate: CaptureUpdateAction.NEVER });
     }
     if (settled) this.hash = hashElementsVersion(all);
+    const lacking = await this.pictures.load(all, api.getFiles());
+    if (lacking.length > 0) api.addFiles(lacking);
   }
 
   /** Adds what an agent drew, as one step the person can undo, and brings
@@ -225,6 +232,11 @@ export class BoardSession {
   /** The board as the person sees it, without what was deleted. */
   shown(): readonly NonDeletedExcalidrawElement[] {
     return this.api!.getSceneElements();
+  }
+
+  /** The pictures the board holds. */
+  files(): BinaryFiles {
+    return this.api!.getFiles();
   }
 
   /** Shows a failure in the board's own toast. */

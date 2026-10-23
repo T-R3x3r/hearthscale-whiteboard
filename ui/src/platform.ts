@@ -1,10 +1,11 @@
 /**
  * What the view asks of the platform: the app's store, which keeps the
- * boards; the backend's events, which carry an agent's requests; an asset
- * of the app, which holds a board's picture for an agent; the backend's
- * `answer` tool, which carries the view's answers back; the tab's widget
- * state, which keeps where the tab looked at its board; and links, which
- * open in the person's browser.
+ * boards; the backend's events, which carry an agent's requests; the
+ * assets of the app, which hold the pictures on the boards and a board's
+ * picture for an agent; the backend's `answer` and `release` tools, which
+ * carry the view's answers back and let assets go; the system's picker of
+ * files; the tab's widget state, which keeps where the tab looked at its
+ * board; and links, which open in the person's browser.
  */
 import { App, McpUiMessageResultSchema as Answer } from '@modelcontextprotocol/ext-apps';
 
@@ -69,6 +70,43 @@ export class Platform {
       blob: base64,
     });
     return asset;
+  }
+
+  /** An asset of the app, as its bytes in base64 and its media type. */
+  async asset(id: string): Promise<{ base64: string; mimeType: string }> {
+    const { contents } = await this.app.readServerResource({ uri: `hearthscale-asset://${id}` });
+    const part = contents[0];
+    if (!part || !('blob' in part) || !part.mimeType) {
+      throw new Error(`the asset ${id} holds no picture`);
+    }
+    return { base64: part.blob, mimeType: part.mimeType };
+  }
+
+  /** Lets go of assets of the app through the backend's `release` tool. */
+  async release(assets: string[]): Promise<void> {
+    const result = await this.app.callServerTool({ name: 'release', arguments: { assets } });
+    if (result.isError) throw new Error('the backend did not let the pictures go');
+  }
+
+  /** The system's picker of files, on the person's click: the picture
+   *  they pick; rejects with an `AbortError` when they pick none. */
+  async pickPicture(): Promise<File> {
+    const { files } = await this.call<{ files: { name: string; resourceUri: string }[] }>(
+      'hearthscale/ui/select-files',
+      { accept: ['image/*'] },
+    );
+    const picked = files[0];
+    if (!picked) throw new DOMException('no picture was picked', 'AbortError');
+    const { contents } = await this.app.readServerResource({
+      uri: picked.resourceUri,
+      _meta: { 'openai/resource': { representation: 'blob' } },
+    });
+    const part = contents[0];
+    if (!part || !('blob' in part) || !part.mimeType?.startsWith('image/')) {
+      throw new Error(`${picked.name} is not a picture`);
+    }
+    const bytes = Uint8Array.from(atob(part.blob), (c) => c.charCodeAt(0));
+    return new File([bytes], picked.name, { type: part.mimeType });
   }
 
   /** Answers a request of the backend through its `answer` tool. */

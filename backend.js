@@ -4,10 +4,12 @@
  * boards live in the app's store, which the view keeps as the person
  * draws (`ui/src/boards.ts` names the keys); the tools work on the board
  * opened last. `contents` reads it from the store. `draw` adds its shapes
- * to the store, then asks the views to show them; the person can move,
- * change or undo them like their own. `look` asks a view for the board's
- * picture, which only a view can draw. A view answers through the
- * `answer` tool, which only the app's views may call.
+ * to the store, brings the board to the front beside the conversation,
+ * then asks the views to show them; the person can move, change or undo
+ * them like their own. `look` asks a view for the board's picture, which
+ * only a view can draw. A view answers through the `answer` tool and lets
+ * go of the pictures no board shows through `release`, which only the
+ * app's views may call.
  */
 
 let ctx = null;
@@ -17,6 +19,8 @@ const waiting = new Map();
 
 /** How long a drawing waits for a view to show it. */
 const SHOW_MS = 3000;
+/** How long a drawing waits for the view the window opened for it. */
+const OPEN_MS = 15000;
 /** How long `look` waits for a view to draw the board's picture. */
 const LOOK_MS = 15000;
 
@@ -67,9 +71,23 @@ async function boardToDrawOn() {
   return board;
 }
 
-/** A board's elements, deleted ones included. */
+/** A board's elements, deleted ones included, from its first part and
+ *  the further parts it counts. */
 async function elementsOf(board) {
-  return (await ctx.store.get(`board:${board.id}`))?.elements ?? [];
+  const head = await ctx.store.get(`board:${board.id}`);
+  const rest = [];
+  for (let i = 1; i <= (head?.more ?? 0); i++) {
+    rest.push(...((await ctx.store.get(`board:${board.id}:${i}`))?.elements ?? []));
+  }
+  return [...(head?.elements ?? []), ...rest];
+}
+
+/** Keeps a board's elements whole in its first part, which a write of the
+ *  backend carries at any size, and lets its further parts go. */
+async function writeElements(board, elements) {
+  const more = (await ctx.store.get(`board:${board.id}`))?.more ?? 0;
+  await ctx.store.set(`board:${board.id}`, { elements });
+  for (let i = 1; i <= more; i++) await ctx.store.delete(`board:${board.id}:${i}`);
 }
 
 // ---------- Shapes into elements ----------
@@ -311,7 +329,7 @@ function itemsOf(elements) {
     .filter((e) => !(e.type === 'text' && e.containerId))
     .map((e) => ({
       id: e.id,
-      kind: e.type,
+      kind: e.type === 'image' ? 'picture' : e.type,
       label: labelOf(e),
       x: Math.round(e.x),
       y: Math.round(e.y),
@@ -363,12 +381,18 @@ module.exports = {
         e.x += left;
         e.y += top;
       }
-      await ctx.store.set(`board:${board.id}`, { elements: [...elements, ...drawing] });
-      const shown = await ask('drawn', { board: board.id, elements: drawing }, SHOW_MS, run.signal);
+      await writeElements(board, [...elements, ...drawing]);
+      const front = await ctx.surfaces.show('board').then(
+        () => true,
+        () => false,
+      );
+      const asked = { board: board.id, elements: drawing };
+      let shown = await ask('drawn', asked, SHOW_MS, run.signal);
+      if (!shown && front) shown = await ask('drawn', asked, OPEN_MS, run.signal);
       const drew = `Drew ${shapes.length} shape${shapes.length === 1 ? '' : 's'} on the whiteboard "${board.name}", to the right of what it held`;
-      return shown
-        ? `${drew}, and showed them to the person.`
-        : `${drew}. Whiteboard is not open, so the person sees them when they open it.`;
+      if (shown) return `${drew}, and showed them to the person.`;
+      if (front) return `${drew}, and opened the board beside this conversation.`;
+      return `${drew}. Whiteboard is not open, so the person sees them when they open it.`;
     },
     async look(_input, run) {
       const board = await openBoard();
@@ -396,6 +420,10 @@ module.exports = {
       if (!answered) return 'No request waits for this answer.';
       answered(input);
       return 'Taken.';
+    },
+    async release({ assets }) {
+      for (const asset of assets) await ctx.assets.release(asset);
+      return `Let ${assets.length} picture${assets.length === 1 ? '' : 's'} go.`;
     },
   },
 };

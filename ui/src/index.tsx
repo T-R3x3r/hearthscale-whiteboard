@@ -1,7 +1,8 @@
 /**
  * The Whiteboard view's start: it connects to its host, reads the boards
  * from the app's store, makes the first board when there is none, and
- * shows the board opened last where the tab looked at it last.
+ * shows the board opened last, with its pictures, where the tab looked at
+ * it last.
  *
  * The start runs after the module has evaluated, not at its top level:
  * the build places the parts of Excalidraw it loads on demand after this
@@ -12,6 +13,7 @@ import { createRoot } from 'react-dom/client';
 import { App, PostMessageTransport } from '@modelcontextprotocol/ext-apps';
 import excalidrawSheet from '@excalidraw/excalidraw/index.css?inline';
 import { Boards } from './boards.ts';
+import { Pictures } from './pictures.ts';
 import { Platform } from './platform.ts';
 import { Whiteboard, type Viewport } from './Whiteboard.tsx';
 import sheet from './ui.css?inline';
@@ -46,10 +48,11 @@ async function start(): Promise<void> {
   style.textContent = `${excalidrawSheet}\n${sheet}`;
   document.head.append(style);
 
-  const app = new App({ name: 'Whiteboard', version: '2.0.0' }, {}, { autoResize: false });
+  const app = new App({ name: 'Whiteboard', version: '2.1.0' }, {}, { autoResize: false });
   const platform = new Platform(app);
   await app.connect(new PostMessageTransport(window.parent, window.parent));
   const boards = new Boards(platform);
+  const pictures = new Pictures(platform, boards);
 
   let list = await boards.list();
   if (list.length === 0) {
@@ -60,6 +63,7 @@ async function start(): Promise<void> {
   const open = list.find((b) => b.id === last) ?? list[0]!;
   if (open.id !== last) await boards.setOpen(open.id);
   const [elements, library] = await Promise.all([boards.elements(open.id), boards.library()]);
+  const files = await pictures.files(elements);
 
   const root = document.createElement('div');
   root.className = 'wb-root';
@@ -68,9 +72,10 @@ async function start(): Promise<void> {
     <Whiteboard
       platform={platform}
       boards={boards}
+      pictures={pictures}
       first={{
         list,
-        shown: { id: open.id, elements, library, sidebar: null },
+        shown: { id: open.id, elements, files, library, sidebar: null },
         viewport: platform.widgetState<Viewport>(),
       }}
     />,

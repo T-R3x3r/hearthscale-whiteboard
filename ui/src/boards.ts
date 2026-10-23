@@ -4,7 +4,10 @@
  * - `boards`: every board's id and name, in the order they were made;
  * - `open`: the board opened last, which an agent reads and draws on;
  * - `board:<id>`: a board's elements, deleted ones included for a day so
- *   that a deletion wins over an older copy;
+ *   that a deletion wins over an older copy, and the number of further
+ *   parts, `board:<id>:1` and on, that hold the rest of a board larger
+ *   than one store write;
+ * - `pictures`: the pictures on the boards, each an asset of the app;
  * - `library`: the person's library of shapes.
  */
 import { reconcileElements, restoreElements, restoreLibraryItems } from '@excalidraw/excalidraw';
@@ -24,31 +27,44 @@ export interface BoardEntry {
 /** How long a deleted element is kept beside the board. */
 const KEEP_DELETED_MS = 24 * 60 * 60 * 1000;
 
-/** The most one store write of a view carries: the platform takes a
- *  request body of 2 MiB at most, and the client answers a larger one as
- *  if the platform had stopped. */
-const STORE_WRITE_BYTES = 2 * 1024 * 1024;
+/** The most one part of a board carries as JSON: the platform takes one
+ *  store write of a view of 2 MiB at most, and the part leaves room for
+ *  the body around it. */
+const PART_BYTES = 2 * 1024 * 1024 - 4096;
 
-const megabytes = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
-
-/** A board too large for one store write, which the view does not send. */
-export class BoardTooLarge extends Error {
-  constructor(readonly bytes: number) {
-    super(
-      `the board takes ${megabytes(bytes)} MB, over the ${megabytes(STORE_WRITE_BYTES)} MB of one store write`,
-    );
-  }
-
-  /** The size of the board in words. */
-  get size(): string {
-    return `${megabytes(this.bytes)} MB`;
-  }
-
-  /** The most a board may take, in words. */
-  static get limit(): string {
-    return `${megabytes(STORE_WRITE_BYTES)} MB`;
-  }
+/** A board as one store key holds it: its first elements, and how many
+ *  further parts hold the rest. */
+interface BoardHead {
+  elements: ExcalidrawElement[];
+  more?: number;
 }
+
+/** A board's elements in parts, each at most `PART_BYTES` as JSON. */
+function partsOf(elements: readonly ExcalidrawElement[]): ExcalidrawElement[][] {
+  const parts: ExcalidrawElement[][] = [[]];
+  let bytes = 0;
+  const encoder = new TextEncoder();
+  for (const e of elements) {
+    const size = encoder.encode(JSON.stringify(e)).length + 1;
+    if (bytes + size > PART_BYTES && parts.at(-1)!.length > 0) {
+      parts.push([]);
+      bytes = 0;
+    }
+    parts.at(-1)!.push(e);
+    bytes += size;
+  }
+  return parts;
+}
+
+/** A picture on the boards: the asset that holds it, its media type, and
+ *  when it was kept. */
+export interface PictureEntry {
+  asset: string;
+  mimeType: string;
+  kept: number;
+}
+
+export type PictureMap = Record<string, PictureEntry>;
 
 /** A new id, as Excalidraw makes its own. */
 function newId(): string {
@@ -127,19 +143,39 @@ export class Boards {
     await this.platform.set('open', id);
   }
 
-  async elements(id: string): Promise<readonly ExcalidrawElement[]> {
-    return (
-      (await this.platform.get<{ elements: ExcalidrawElement[] }>(`board:${id}`))?.elements ?? []
+  /** A board's elements, and the number of parts beyond its first. */
+  private async read(id: string): Promise<{ elements: ExcalidrawElement[]; more: number }> {
+    const head = await this.platform.get<BoardHead>(`board:${id}`);
+    const more = head?.more ?? 0;
+    const rest = await Promise.all(
+      Array.from({ length: more }, (_, i) => this.platform.get<BoardHead>(`board:${id}:${i + 1}`)),
     );
+    return {
+      elements: [head?.elements ?? [], ...rest.map((part) => part?.elements ?? [])].flat(),
+      more,
+    };
   }
 
-  /** Keeps a board's elements; throws `BoardTooLarge`, and sends nothing,
-   *  when they are more than one store write carries. */
+  async elements(id: string): Promise<readonly ExcalidrawElement[]> {
+    return (await this.read(id)).elements;
+  }
+
+  /** Keeps a board's elements in as many parts as one store write each
+   *  carries: the further parts first, then the first one that counts
+   *  them, then the parts a larger board left behind go. */
   async write(id: string, elements: readonly ExcalidrawElement[]): Promise<void> {
-    const value = { elements };
-    const bytes = new TextEncoder().encode(JSON.stringify({ value })).length;
-    if (bytes > STORE_WRITE_BYTES) throw new BoardTooLarge(bytes);
-    await this.platform.set(`board:${id}`, value);
+    const before = (await this.platform.get<BoardHead>(`board:${id}`))?.more ?? 0;
+    const [first, ...rest] = partsOf(elements);
+    for (const [i, part] of rest.entries()) {
+      await this.platform.set(`board:${id}:${i + 1}`, { elements: part });
+    }
+    await this.platform.set(`board:${id}`, {
+      elements: first!,
+      ...(rest.length > 0 && { more: rest.length }),
+    });
+    for (let i = rest.length + 1; i <= before; i++) {
+      await this.platform.delete(`board:${id}:${i}`);
+    }
   }
 
   /** Makes a board, empty, and answers it with the new list. */
@@ -161,8 +197,18 @@ export class Boards {
   async remove(id: string): Promise<BoardEntry[]> {
     const boards = (await this.list()).filter((b) => b.id !== id);
     await this.platform.set('boards', boards);
+    const { more } = await this.read(id);
     await this.platform.delete(`board:${id}`);
+    for (let i = 1; i <= more; i++) await this.platform.delete(`board:${id}:${i}`);
     return boards;
+  }
+
+  async pictures(): Promise<PictureMap> {
+    return (await this.platform.get<PictureMap>('pictures')) ?? {};
+  }
+
+  async setPictures(pictures: PictureMap): Promise<void> {
+    await this.platform.set('pictures', pictures);
   }
 
   async library(): Promise<LibraryItems> {

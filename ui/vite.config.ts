@@ -47,7 +47,10 @@ function replaceOnce(code: string, find: string | RegExp, by: string, what: stri
  *  - The font faces become `data:` addresses inside the module.
  *  - Web embeds leave the tools menu, and the embed of a tweet or a Reddit
  *    post loads no script from the network.
- *  - The interface takes the kit's font in place of Assistant. */
+ *  - The interface takes the kit's font in place of Assistant.
+ *  - The picture tool picks its file through the platform's picker, which
+ *    the view hands it as `globalThis.whiteboardPicture`: a view has no
+ *    file picker of the browser's. */
 function offline(): Plugin {
   return {
     name: 'whiteboard-offline',
@@ -91,6 +94,14 @@ function offline(): Plugin {
           /[A-Za-z_$]+\([A-Za-z_$]+\.Item,\{onSelect:\(\)=>[A-Za-z_$]+\.setOpenDialog\(\{name:"ttd",tab:"mermaid"\}\),[^}]*?children:[A-Za-z_$]+\("toolBar\.mermaidToExcalidraw"\)\}\),/,
           '',
           'the Mermaid entry of the tools menu',
+        );
+      }
+      if (out.includes('C(this,"onImageAction"')) {
+        out = replaceOnce(
+          out,
+          /await [A-Za-z_$]+\(\{description:"Image",extensions:Object\.keys\([A-Za-z_$]+\)\}\)/,
+          'await globalThis.whiteboardPicture()',
+          "the picture tool's file picker",
         );
       }
       if (out.includes('platform.twitter.com')) {

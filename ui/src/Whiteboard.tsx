@@ -3,9 +3,10 @@
  * last, with the boards in a sidebar and in the main menu. Excalidraw
  * wears the window's scheme, and the kit's tokens through its own
  * variables. Its menus hold only what works in a view with no network:
- * no sharing, no files of the computer, no export and no theme of its
- * own. The view answers the backend's requests for an agent: it shows
- * what the agent drew, and draws the board's picture.
+ * no sharing, no files of the computer but the pictures the platform's
+ * picker gives, no export and no theme of its own. The view answers the
+ * backend's requests for an agent: it shows what the agent drew, and
+ * draws the board's picture.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
@@ -18,15 +19,22 @@ import {
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import type {
   AppState,
+  BinaryFiles,
   ExcalidrawImperativeAPI,
   LibraryItems,
   NormalizedZoomValue,
   UIOptions,
 } from '@excalidraw/excalidraw/types';
 import { BOARDS, BoardList } from './BoardList.tsx';
-import { BoardTooLarge, type BoardEntry, type Boards } from './boards.ts';
+import type { BoardEntry, Boards } from './boards.ts';
+import type { Pictures } from './pictures.ts';
 import type { AppEvent, Platform } from './platform.ts';
 import { BoardSession, CHANNEL, picture } from './session.ts';
+
+declare global {
+  /** The file of Excalidraw's picture tool, from the platform's picker. */
+  var whiteboardPicture: () => Promise<File>;
+}
 
 const UI: Partial<UIOptions> = {
   canvasActions: {
@@ -38,7 +46,6 @@ const UI: Partial<UIOptions> = {
     saveToActiveFile: false,
     toggleTheme: false,
   },
-  tools: { image: false },
 };
 
 /** The window's scheme, which the host writes on the document as the kit
@@ -67,6 +74,7 @@ const VIEWPORT_AFTER_MS = 600;
 export interface Shown {
   id: string;
   elements: readonly ExcalidrawElement[];
+  files: BinaryFiles;
   library: LibraryItems;
   sidebar: AppState['openSidebar'];
 }
@@ -104,9 +112,6 @@ async function kept(session: BoardSession): Promise<boolean> {
 /** The words of a keep that failed: what happened, and what the person
  *  can do. */
 function unsavedWords(failure: unknown): string {
-  if (failure instanceof BoardTooLarge) {
-    return `This board is not saved: it takes ${failure.size}, and a board can take ${BoardTooLarge.limit} at most. Delete large parts of it, or cut a part and paste it on a new board. Your drawing stays on screen, and it is saved as soon as it is small enough.`;
-  }
   const cause = words(failure)
     .replace(/^MCP error -?\d+: /, '')
     .replace(/\.+$/, '');
@@ -133,10 +138,12 @@ function UnsavedNotice({ failure }: { failure: unknown }) {
 export function Whiteboard({
   platform,
   boards,
+  pictures,
   first,
 }: {
   platform: Platform;
   boards: Boards;
+  pictures: Pictures;
   first: { list: BoardEntry[]; shown: Shown; viewport: Viewport | null };
 }) {
   const theme = useSyncExternalStore(onScheme, scheme);
@@ -147,8 +154,8 @@ export function Whiteboard({
   const [unsaved, setUnsaved] = useState<unknown>(null);
   const channel = useMemo(() => new BroadcastChannel(CHANNEL), []);
   const session = useMemo(
-    () => new BoardSession(shown.id, shown.elements, boards, channel, setUnsaved),
-    [shown, boards, channel],
+    () => new BoardSession(shown.id, shown.elements, boards, pictures, channel, setUnsaved),
+    [shown, boards, pictures, channel],
   );
   const current = useRef(session);
   current.current = session;
@@ -168,12 +175,13 @@ export function Whiteboard({
         current.current.discard();
       }
       const [elements, library] = await Promise.all([boards.elements(id), boards.library()]);
+      const files = await pictures.files(elements);
       await boards.setOpen(id);
       setUnsaved(null);
-      setShown({ id, elements, library, sidebar });
+      setShown({ id, elements, files, library, sidebar });
       return true;
     },
-    [api, boards],
+    [api, boards, pictures],
   );
 
   const showing = useRef(show);
@@ -265,14 +273,17 @@ export function Whiteboard({
           } else if (event.name === 'look') {
             try {
               let elements;
+              let files;
               if (asked.board === on.id) {
                 await on.whenReady();
                 elements = on.shown();
+                files = on.files();
               } else {
                 const stored = restoreElements(await boards.elements(asked.board), null);
                 elements = stored.filter((e) => !e.isDeleted);
+                files = await pictures.files(elements);
               }
-              const asset = await picture(elements, dark.current, platform);
+              const asset = await picture(elements, files, dark.current, platform);
               await platform.answer({ request, ...(asset && { asset }) });
             } catch (e) {
               await platform.answer({ request, error: words(e) });
@@ -283,8 +294,22 @@ export function Whiteboard({
           current.current.fail("An agent's request was not answered", e),
         );
       }),
-    [platform, boards, showFor],
+    [platform, boards, pictures, showFor],
   );
+
+  // Excalidraw's picture tool picks its file through the platform.
+  useEffect(() => {
+    globalThis.whiteboardPicture = () => platform.pickPicture();
+  }, [platform]);
+
+  // The pictures no board shows any more go, once the board on screen is
+  // ready.
+  useEffect(() => {
+    void session
+      .whenReady()
+      .then(async () => pictures.sweep((await boards.list()).map((b) => b.id)))
+      .catch((e: unknown) => session.fail('The pictures no board shows were not let go', e));
+  }, []);
 
   // The other views of the app on this computer.
   useEffect(() => {
@@ -318,6 +343,7 @@ export function Whiteboard({
     const seen = viewports.current.get(shown.id);
     return {
       elements: shown.elements,
+      files: shown.files,
       appState: {
         viewBackgroundColor: 'transparent',
         openSidebar: shown.sidebar,

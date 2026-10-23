@@ -90,17 +90,16 @@ body,
 }
 
 /* Excalidraw's parts that reach its site, the public libraries or the
-   computer's files, which a view does not, and the context menu's
-   Paste and Copy to clipboard as PNG, which read the clipboard and write
-   a picture to it, which a view may not. A paste with the keys works. */
+   computer's files, which a view does not, and the context menu's Paste,
+   which reads the clipboard, which a view may not. A paste with the keys
+   works. */
 .hs-view .HelpDialog__header,
 .hs-view .library-menu-browse-button,
 .hs-view .library-menu-items-container__header--excal,
 .hs-view .excalidraw .dropdown-menu [data-testid='lib-dropdown--load'],
 .hs-view .excalidraw .dropdown-menu [data-testid='lib-dropdown--export'],
 .hs-view .excalidraw .dropdown-menu [data-testid='lib-dropdown--remove'],
-.hs-view .context-menu [data-testid='paste'],
-.hs-view .context-menu [data-testid='copyAsPng'] {
+.hs-view .context-menu [data-testid='paste'] {
   display: none;
 }
 
