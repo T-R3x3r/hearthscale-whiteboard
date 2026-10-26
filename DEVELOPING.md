@@ -57,15 +57,15 @@ manifest's `clipboard-write` permission.
 In the app's store, through the `store` extension, which the backend
 reads too:
 
-| Key              | What it holds                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------------- |
-| `boards`         | Each board's id and name, in the order they were made.                                          |
-| `open`           | The board opened last, which an agent reads and draws on.                                       |
-| `board:<id>`     | A board's elements, a deleted one for a day as a tombstone, and `more`, the count of parts.     |
-| `board:<id>:<n>` | The further parts of a board larger than one store write of a view.                             |
-| `pictures`       | Each picture on the boards by Excalidraw's file id: its asset, media type and when it was kept. |
-| `library`        | The library of shapes.                                                                          |
-| `looked`         | The asset of the board's last picture, which the next one frees.                                |
+| Key                    | What it holds                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| `boards`               | Each board's id and name, in the order they were made.                                          |
+| `open`                 | The board opened last, which an agent reads and draws on.                                       |
+| `board:<id>`           | A board's elements, a deleted one for a day as a tombstone, and `gen` and `more`, its parts.    |
+| `board:<id>:<gen>:<n>` | The further parts of a board larger than one store write of a view, by the write's generation.  |
+| `pictures`             | Each picture on the boards by Excalidraw's file id: its asset, media type and when it was kept. |
+| `library`              | The library of shapes.                                                                          |
+| `looked`               | The asset of the board's last picture, which the next one frees.                                |
 
 A change is kept 400 ms after the drawing stops. Each keep reads the
 board from the store first and merges it in, element by element, the
@@ -79,11 +79,14 @@ A deleted element is kept for a day as a tombstone: its id, version and
 place, enough for a merge, so a deletion frees the room the element took.
 
 One store write of a view carries 2 MiB at most. The view writes a larger
-board in parts: the further parts first, then `board:<id>` with their
-count, then the parts a larger board left behind go. The backend writes in
-its own process, with no such limit, so it keeps a board whole in
-`board:<id>` and lets the further parts go; the view splits it again at
-its next keep.
+board in parts: the further parts first, under the keys of a new
+generation, then `board:<id>` with that generation and their count, then
+the parts of the generation it replaced go. The backend writes in its own
+process, with no such limit, so it keeps a board whole in `board:<id>`
+and then lets the parts of the generation it replaced go; the view splits
+the board again at its next keep. A write lets go of no part that another
+write's head names, so a read never joins the parts of two writes; a read
+that finds a part gone reads the board again from its new head.
 
 A picture is not in the board: Excalidraw holds it as a file of its own,
 which the view keeps as an asset of the app (`hearthscale/ui/upload-file`)

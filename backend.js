@@ -71,23 +71,37 @@ async function boardToDrawOn() {
   return board;
 }
 
-/** A board's elements, deleted ones included, from its first part and
- *  the further parts it counts. */
+/** The keys of the further parts a board's head names, the parts of the
+ *  write that kept it: `board:<id>:<gen>:1` and on. */
+const partKeys = (board, head) =>
+  Array.from({ length: head?.more ?? 0 }, (_, i) => `board:${board.id}:${head.gen}:${i + 1}`);
+
+/** A board's elements, deleted ones included, from its head and the
+ *  further parts it names. A part that is gone was let go by a later
+ *  write, so the board is read again from the head that write left. */
 async function elementsOf(board) {
-  const head = await ctx.store.get(`board:${board.id}`);
-  const rest = [];
-  for (let i = 1; i <= (head?.more ?? 0); i++) {
-    rest.push(...((await ctx.store.get(`board:${board.id}:${i}`))?.elements ?? []));
+  let head = await ctx.store.get(`board:${board.id}`);
+  for (;;) {
+    const parts = [];
+    for (const key of partKeys(board, head)) parts.push(await ctx.store.get(key));
+    if (parts.every((part) => part !== null)) {
+      return [...(head?.elements ?? []), ...parts.flatMap((part) => part.elements)];
+    }
+    const now = await ctx.store.get(`board:${board.id}`);
+    if (now?.gen === head?.gen) {
+      throw new Error(`a part of the board ${board.name} is missing from the store`);
+    }
+    head = now;
   }
-  return [...(head?.elements ?? []), ...rest];
 }
 
-/** Keeps a board's elements whole in its first part, which a write of the
- *  backend carries at any size, and lets its further parts go. */
+/** Keeps a board's elements whole in its head, which a write of the
+ *  backend carries at any size, then lets go of the further parts of the
+ *  head it replaced; the parts another write's head names stay. */
 async function writeElements(board, elements) {
-  const more = (await ctx.store.get(`board:${board.id}`))?.more ?? 0;
+  const replaced = await ctx.store.get(`board:${board.id}`);
   await ctx.store.set(`board:${board.id}`, { elements });
-  for (let i = 1; i <= more; i++) await ctx.store.delete(`board:${board.id}:${i}`);
+  for (const key of partKeys(board, replaced)) await ctx.store.delete(key);
 }
 
 // ---------- Shapes into elements ----------

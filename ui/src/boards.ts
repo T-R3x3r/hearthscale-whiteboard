@@ -4,9 +4,9 @@
  * - `boards`: every board's id and name, in the order they were made;
  * - `open`: the board opened last, which an agent reads and draws on;
  * - `board:<id>`: a board's elements, deleted ones included for a day so
- *   that a deletion wins over an older copy, and the number of further
- *   parts, `board:<id>:1` and on, that hold the rest of a board larger
- *   than one store write;
+ *   that a deletion wins over an older copy, and, for a board larger than
+ *   one store write, the generation and the count of the further parts,
+ *   `board:<id>:<gen>:1` and on, that hold the rest;
  * - `pictures`: the pictures on the boards, each an asset of the app;
  * - `library`: the person's library of shapes.
  */
@@ -32,11 +32,23 @@ const KEEP_DELETED_MS = 24 * 60 * 60 * 1000;
  *  the body around it. */
 const PART_BYTES = 2 * 1024 * 1024 - 4096;
 
-/** A board as one store key holds it: its first elements, and how many
- *  further parts hold the rest. */
-interface BoardHead {
+/** One part of a board as one store key holds it. */
+interface BoardPart {
   elements: ExcalidrawElement[];
+}
+
+/** A board's head, its first part: for a board larger than one store
+ *  write, the generation of the write that kept it and how many further
+ *  parts of that generation hold the rest. */
+interface BoardHead extends BoardPart {
+  gen?: string;
   more?: number;
+}
+
+/** The keys of the further parts a head names: `board:<id>:<gen>:1` and
+ *  on. */
+function partKeys(id: string, head: BoardHead | null): string[] {
+  return Array.from({ length: head?.more ?? 0 }, (_, i) => `board:${id}:${head!.gen}:${i + 1}`);
 }
 
 /** A board's elements in parts, each at most `PART_BYTES` as JSON. */
@@ -143,39 +155,42 @@ export class Boards {
     await this.platform.set('open', id);
   }
 
-  /** A board's elements, and the number of parts beyond its first. */
-  private async read(id: string): Promise<{ elements: ExcalidrawElement[]; more: number }> {
-    const head = await this.platform.get<BoardHead>(`board:${id}`);
-    const more = head?.more ?? 0;
-    const rest = await Promise.all(
-      Array.from({ length: more }, (_, i) => this.platform.get<BoardHead>(`board:${id}:${i + 1}`)),
-    );
-    return {
-      elements: [head?.elements ?? [], ...rest.map((part) => part?.elements ?? [])].flat(),
-      more,
-    };
-  }
-
+  /** A board's elements, from its head and the further parts it names. A
+   *  part that is gone was let go by a later write, so the board is read
+   *  again from the head that write left. */
   async elements(id: string): Promise<readonly ExcalidrawElement[]> {
-    return (await this.read(id)).elements;
+    let head = await this.platform.get<BoardHead>(`board:${id}`);
+    for (;;) {
+      const parts = await Promise.all(
+        partKeys(id, head).map((key) => this.platform.get<BoardPart>(key)),
+      );
+      if (parts.every((part): part is BoardPart => part !== null)) {
+        return [head?.elements ?? [], ...parts.map((part) => part.elements)].flat();
+      }
+      const now = await this.platform.get<BoardHead>(`board:${id}`);
+      if (now?.gen === head?.gen) throw new Error('a part of this board is missing from the store');
+      head = now;
+    }
   }
 
   /** Keeps a board's elements in as many parts as one store write each
-   *  carries: the further parts first, then the first one that counts
-   *  them, then the parts a larger board left behind go. */
+   *  carries. The further parts go under the keys of a new generation, the
+   *  head that names them comes last, and then the parts of the head it
+   *  replaced go: a read never joins the parts of two writes, and a write
+   *  lets go of no part that another write's head names. */
   async write(id: string, elements: readonly ExcalidrawElement[]): Promise<void> {
-    const before = (await this.platform.get<BoardHead>(`board:${id}`))?.more ?? 0;
     const [first, ...rest] = partsOf(elements);
-    for (const [i, part] of rest.entries()) {
-      await this.platform.set(`board:${id}:${i + 1}`, { elements: part });
-    }
-    await this.platform.set(`board:${id}`, {
+    const head: BoardHead = {
       elements: first!,
-      ...(rest.length > 0 && { more: rest.length }),
-    });
-    for (let i = rest.length + 1; i <= before; i++) {
-      await this.platform.delete(`board:${id}:${i}`);
+      ...(rest.length > 0 && { gen: newId(), more: rest.length }),
+    };
+    const keys = partKeys(id, head);
+    for (const [i, part] of rest.entries()) {
+      await this.platform.set(keys[i]!, { elements: part });
     }
+    const replaced = await this.platform.get<BoardHead>(`board:${id}`);
+    await this.platform.set(`board:${id}`, head);
+    for (const key of partKeys(id, replaced)) await this.platform.delete(key);
   }
 
   /** Makes a board, empty, and answers it with the new list. */
@@ -197,9 +212,9 @@ export class Boards {
   async remove(id: string): Promise<BoardEntry[]> {
     const boards = (await this.list()).filter((b) => b.id !== id);
     await this.platform.set('boards', boards);
-    const { more } = await this.read(id);
+    const head = await this.platform.get<BoardHead>(`board:${id}`);
     await this.platform.delete(`board:${id}`);
-    for (let i = 1; i <= more; i++) await this.platform.delete(`board:${id}:${i}`);
+    for (const key of partKeys(id, head)) await this.platform.delete(key);
     return boards;
   }
 
