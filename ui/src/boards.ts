@@ -70,7 +70,7 @@ function partsOf(elements: readonly ExcalidrawElement[]): ExcalidrawElement[][] 
 
 /** A picture on the boards: the asset that holds it, its media type, and
  *  when it was kept. */
-export interface PictureEntry {
+interface PictureEntry {
   asset: string;
   mimeType: string;
   kept: number;

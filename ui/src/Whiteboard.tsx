@@ -71,7 +71,7 @@ export interface Viewport {
 const VIEWPORT_AFTER_MS = 600;
 
 /** The board on screen: what Excalidraw starts from when it shows it. */
-export interface Shown {
+interface Shown {
   id: string;
   elements: readonly ExcalidrawElement[];
   files: BinaryFiles;

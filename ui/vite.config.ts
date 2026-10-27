@@ -28,13 +28,83 @@ const CARRIED = new Set(['Excalifont', 'Nunito', 'ComicShanns', 'Lilita']);
  *  out. */
 const NOTHING = '\0whiteboard:nothing';
 
-/** Replaces one piece of the package's code, and fails the build when the
- *  piece is not there, as after an update of Excalidraw. */
-function replaceOnce(code: string, find: string | RegExp, by: string, what: string): string {
-  const found = typeof find === 'string' ? code.includes(find) : find.test(code);
-  if (!found) throw new Error(`Excalidraw's code no longer holds ${what}`);
-  return code.replace(find, by);
+/** A change to the package's code: in words, what it changes; the files it
+ *  looks in, by their extension; the code it finds; and what replaces that
+ *  code. */
+interface Patch {
+  what: string;
+  ext: '.js' | '.css';
+  find: string | RegExp;
+  by: (match: string, ...groups: string[]) => string;
 }
+
+/** The changes to Excalidraw's code, in the order they apply. */
+const PATCHES: Patch[] = [
+  {
+    what: 'the addresses of the font faces',
+    ext: '.js',
+    find: /"\.\/fonts\/([A-Za-z]+)\/([^"]+\.woff2)"/g,
+    by: (_match, family, name) => {
+      if (!CARRIED.has(family)) return '"local:"';
+      const face = readFileSync(join(PACKAGE, 'fonts', family, name)).toString('base64');
+      return `"data:font/woff2;base64,${face}"`;
+    },
+  },
+  {
+    what: 'the web embed entry of the tools menu',
+    ext: '.js',
+    find: /[A-Za-z_$]+\([A-Za-z_$]+\.Item,\{onSelect:\(\)=>[A-Za-z_$]+\.setActiveTool\(\{type:"embeddable"\}\),[^}]*?"data-testid":"toolbar-embeddable"[^}]*?\}\),/,
+    by: () => '',
+  },
+  {
+    what: 'the Generate heading of the tools menu',
+    ext: '.js',
+    find: /[A-Za-z_$]+\("div",\{style:\{margin:"6px 0",fontSize:14,fontWeight:600\},children:"Generate"\}\),/,
+    by: () => '',
+  },
+  {
+    what: 'the Mermaid entry of the tools menu',
+    ext: '.js',
+    find: /[A-Za-z_$]+\([A-Za-z_$]+\.Item,\{onSelect:\(\)=>[A-Za-z_$]+\.setOpenDialog\(\{name:"ttd",tab:"mermaid"\}\),[^}]*?children:[A-Za-z_$]+\("toolBar\.mermaidToExcalidraw"\)\}\),/,
+    by: () => '',
+  },
+  {
+    what: "the picture tool's file picker",
+    ext: '.js',
+    find: /await [A-Za-z_$]+\(\{description:"Image",extensions:Object\.keys\([A-Za-z_$]+\)\}\)/,
+    by: () => 'await globalThis.whiteboardPicture()',
+  },
+  {
+    what: "the script of a tweet's embed",
+    ext: '.js',
+    find: ' <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"><\\/script>',
+    by: () => '',
+  },
+  {
+    what: "the script of a Reddit post's embed",
+    ext: '.js',
+    find: '<script async="" src="https://embed.reddit.com/widgets.js" charset="UTF-8"><\\/script>',
+    by: () => '',
+  },
+  {
+    what: "the faces of Excalidraw's interface font",
+    ext: '.css',
+    find: /@font-face\{font-family:Assistant;[^}]*\}/g,
+    by: () => '',
+  },
+  {
+    what: "the rules that set Excalidraw's interface font",
+    ext: '.css',
+    find: /font-family:Assistant\b/g,
+    by: () => 'font-family:var(--ui-font)',
+  },
+  {
+    what: "the variable of Excalidraw's interface font",
+    ext: '.css',
+    find: /--ui-font: Assistant,[^;}]*/g,
+    by: () => '--ui-font: var(--font-app)',
+  },
+];
 
 /** Keeps Excalidraw to what works in a view with no network, and keeps the
  *  module small:
@@ -50,8 +120,11 @@ function replaceOnce(code: string, find: string | RegExp, by: string, what: stri
  *  - The interface takes the kit's font in place of Assistant.
  *  - The picture tool picks its file through the platform's picker, which
  *    the view hands it as `globalThis.whiteboardPicture`: a view has no
- *    file picker of the browser's. */
+ *    file picker of the browser's.
+ *  A patch that changes no file fails the build, as after an update of
+ *  Excalidraw. */
 function offline(): Plugin {
+  const applied = new Set<Patch>();
   return {
     name: 'whiteboard-offline',
     enforce: 'pre',
@@ -69,66 +142,20 @@ function offline(): Plugin {
       if (!inPackage(id)) return null;
       const file = id.split('?')[0]!;
       let out = code;
-      if (file.endsWith('.js') && out.includes('"./fonts/')) {
-        out = out.replace(/"\.\/fonts\/([A-Za-z]+)\/([^"]+\.woff2)"/g, (_match, family, name) => {
-          if (!CARRIED.has(family)) return '"local:"';
-          const face = readFileSync(join(PACKAGE, 'fonts', family, name)).toString('base64');
-          return `"data:font/woff2;base64,${face}"`;
-        });
-      }
-      if (out.includes('"data-testid":"toolbar-embeddable"')) {
-        out = replaceOnce(
-          out,
-          /[A-Za-z_$]+\([A-Za-z_$]+\.Item,\{onSelect:\(\)=>[A-Za-z_$]+\.setActiveTool\(\{type:"embeddable"\}\),[^}]*?"data-testid":"toolbar-embeddable"[^}]*?\}\),/,
-          '',
-          'the web embed entry of the tools menu',
-        );
-        out = replaceOnce(
-          out,
-          /[A-Za-z_$]+\("div",\{style:\{margin:"6px 0",fontSize:14,fontWeight:600\},children:"Generate"\}\),/,
-          '',
-          'the Generate heading of the tools menu',
-        );
-        out = replaceOnce(
-          out,
-          /[A-Za-z_$]+\([A-Za-z_$]+\.Item,\{onSelect:\(\)=>[A-Za-z_$]+\.setOpenDialog\(\{name:"ttd",tab:"mermaid"\}\),[^}]*?children:[A-Za-z_$]+\("toolBar\.mermaidToExcalidraw"\)\}\),/,
-          '',
-          'the Mermaid entry of the tools menu',
-        );
-      }
-      if (out.includes('C(this,"onImageAction"')) {
-        out = replaceOnce(
-          out,
-          /await [A-Za-z_$]+\(\{description:"Image",extensions:Object\.keys\([A-Za-z_$]+\)\}\)/,
-          'await globalThis.whiteboardPicture()',
-          "the picture tool's file picker",
-        );
-      }
-      if (out.includes('platform.twitter.com')) {
-        out = replaceOnce(
-          out,
-          ' <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"><\\/script>',
-          '',
-          "the script of a tweet's embed",
-        );
-        out = replaceOnce(
-          out,
-          '<script async="" src="https://embed.reddit.com/widgets.js" charset="UTF-8"><\\/script>',
-          '',
-          "the script of a Reddit post's embed",
-        );
-      }
-      if (file.endsWith('.css')) {
-        out = replaceOnce(
-          out,
-          /@font-face\{font-family:Assistant;[^}]*\}/g,
-          '',
-          "the faces of Excalidraw's interface font",
-        );
-        out = out.replace(/font-family:Assistant\b/g, 'font-family:var(--ui-font)');
-        out = out.replace(/--ui-font: Assistant,[^;}]*/g, '--ui-font: var(--font-app)');
+      for (const patch of PATCHES) {
+        if (!file.endsWith(patch.ext)) continue;
+        const next = out.replace(patch.find, patch.by);
+        if (next !== out) applied.add(patch);
+        out = next;
       }
       return out === code ? null : { code: out, map: null };
+    },
+    buildEnd(error) {
+      if (error) return;
+      const missing = PATCHES.filter((patch) => !applied.has(patch)).map((patch) => patch.what);
+      if (missing.length > 0) {
+        throw new Error(`Excalidraw's code no longer holds ${missing.join('; ')}`);
+      }
     },
   };
 }

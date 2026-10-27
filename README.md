@@ -4,7 +4,7 @@ A whiteboard for sketches and diagrams in a Hearthscale tab, built on the open-s
 
 ## Get started
 
-Open Whiteboard from the rail and draw. The menu at the top left makes a new board, and **Boards** lists them all, where you open, rename or delete one. Paste or drop a picture on the board, or pick one with the picture tool. Everything you draw is kept as you draw it, with no limit on the size of a board.
+Open Whiteboard from the rail and draw. The menu at the top left makes a new board, and **Boards** lists them all, where you open, rename or delete one. Paste or drop a picture on the board, or pick one with the picture tool. Everything you draw is kept as you draw it.
 
 To have an agent help, ask it in a conversation:
 

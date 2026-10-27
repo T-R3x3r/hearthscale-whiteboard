@@ -36,7 +36,7 @@ export function BoardList({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<BoardEntry | null>(null);
   return (
-    <Sidebar name={BOARDS} docked={docked} onDock={onDock} className="wb-sidebar">
+    <Sidebar name={BOARDS} docked={docked} onDock={onDock}>
       <Sidebar.Header>
         <span className="wb-boards-title">Boards</span>
       </Sidebar.Header>
@@ -175,7 +175,7 @@ function Confirm({
   }, [onCancel]);
   return createPortal(
     <div
-      className="hs-confirm wb-confirm"
+      className="hs-confirm"
       data-prevent-outside-click
       onClick={(e) => {
         e.stopPropagation();

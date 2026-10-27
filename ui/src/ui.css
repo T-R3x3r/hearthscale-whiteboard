@@ -164,7 +164,7 @@ body,
 .wb-board-list {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-ladder);
+  gap: var(--gap-label);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -173,7 +173,7 @@ body,
 .wb-board {
   display: flex;
   align-items: center;
-  gap: var(--gap-ladder);
+  gap: var(--gap-label);
   padding-right: var(--space);
   border-radius: var(--r-sm);
 }
