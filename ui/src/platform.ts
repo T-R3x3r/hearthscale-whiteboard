@@ -62,12 +62,13 @@ export class Platform {
     await this.call('hearthscale/store/delete', { key });
   }
 
-  /** Keeps bytes as an asset of the app, and answers its id. */
-  async upload(name: string, mediaType: string, base64: string): Promise<string> {
+  /** Keeps a blob's bytes as an asset of the app, and answers its id; the
+   *  bytes stream to the store as they are read. */
+  async upload(name: string, mediaType: string, blob: Blob): Promise<string> {
     const { asset } = await this.call<{ asset: string }>('hearthscale/ui/upload-file', {
       name,
       mediaType,
-      blob: base64,
+      blob,
     });
     return asset;
   }

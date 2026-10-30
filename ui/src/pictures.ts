@@ -13,6 +13,17 @@ import type { Platform } from './platform.ts';
 /** How long a picture no board shows is kept. */
 const KEEP_UNSHOWN_MS = 24 * 60 * 60 * 1000;
 
+/** The bytes of a `data:` address, in base64 or percent-encoded, as a blob
+ *  of the media type. */
+function blobOf(dataURL: string, mimeType: string): Blob {
+  const comma = dataURL.indexOf(',');
+  const body = dataURL.slice(comma + 1);
+  if (!dataURL.slice(0, comma).endsWith(';base64')) {
+    return new Blob([decodeURIComponent(body)], { type: mimeType });
+  }
+  return new Blob([Uint8Array.from(atob(body), (c) => c.charCodeAt(0))], { type: mimeType });
+}
+
 /** The ids of the pictures the elements show. */
 function shownIn(elements: readonly ExcalidrawElement[]): FileId[] {
   return elements.flatMap((e) =>
@@ -37,8 +48,8 @@ export class Pictures {
     const added: PictureMap = {};
     for (const id of fresh) {
       const file = files[id]!;
-      const base64 = file.dataURL.slice(file.dataURL.indexOf(',') + 1);
-      const asset = await this.platform.upload(`picture-${id}`, file.mimeType, base64);
+      const blob = blobOf(file.dataURL, file.mimeType);
+      const asset = await this.platform.upload(`picture-${id}`, file.mimeType, blob);
       added[id] = { asset, mimeType: file.mimeType, kept: Date.now() };
     }
     await this.boards.setPictures({ ...(await this.boards.pictures()), ...added });

@@ -37,18 +37,6 @@ const PICTURE_MARGIN = 24;
  *  that they kept a board. */
 export const CHANNEL = 'whiteboard';
 
-function blobBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = reader.result as string;
-      resolve(url.slice(url.indexOf(',') + 1));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error('the picture did not read'));
-    reader.readAsDataURL(blob);
-  });
-}
-
 /** A picture of elements and the pictures they show, in the person's
  *  scheme, at most `PICTURE_SIDE` pixels on its longer side, kept as an
  *  asset of the app; null for no elements. */
@@ -70,7 +58,7 @@ export async function picture(
       return { width: width * scale, height: height * scale, scale };
     },
   });
-  return platform.upload('whiteboard.png', 'image/png', await blobBase64(blob));
+  return platform.upload('whiteboard.png', 'image/png', blob);
 }
 
 export class BoardSession {

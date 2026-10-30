@@ -89,8 +89,9 @@ write's head names, so a read never joins the parts of two writes; a read
 that finds a part gone reads the board again from its new head.
 
 A picture is not in the board: Excalidraw holds it as a file of its own,
-which the view keeps as an asset of the app (`hearthscale/ui/upload-file`)
-before it keeps the board that shows it, and reads back as
+which the view keeps as an asset of the app (`hearthscale/ui/upload-file`,
+which takes the bytes as a `Blob` and streams them to the store) before it
+keeps the board that shows it, and reads back as
 `hearthscale-asset://<asset>`. A picture on two boards is kept once. When
 a view starts, it lets go of each picture no board shows that was kept
 more than a day ago, through the backend's `release` tool, which only the
