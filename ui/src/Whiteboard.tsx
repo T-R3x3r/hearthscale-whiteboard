@@ -28,7 +28,7 @@ import type {
 import { BOARDS, BoardList } from './BoardList.tsx';
 import type { BoardEntry, Boards } from './boards.ts';
 import type { Pictures } from './pictures.ts';
-import type { AppEvent, Platform } from './platform.ts';
+import type { AppEvent, Direction, Platform } from './platform.ts';
 import { BoardSession, CHANNEL, picture } from './session.ts';
 
 declare global {
@@ -193,9 +193,9 @@ export function Whiteboard({
     arrivals.current.delete(session.id);
   }, [session]);
 
-  /** Shows a board for an agent, and answers its session once Excalidraw
-   *  shows it; null while the board on screen is not saved. */
-  const showFor = useCallback(async (id: string): Promise<BoardSession | null> => {
+  /** Shows a board, and answers its session once Excalidraw shows it; null
+   *  while the board on screen is not saved. */
+  const showAndWait = useCallback(async (id: string): Promise<BoardSession | null> => {
     if (current.current.id === id) return current.current;
     const arrived = new Promise<BoardSession>((resolve) => arrivals.current.set(id, resolve));
     if (!(await showing.current(id, true))) {
@@ -205,21 +205,56 @@ export function Whiteboard({
     return arrived;
   }, []);
 
+  /** The boards behind and ahead of the one on screen. */
+  const places = useRef<Record<Direction, string[]>>({ back: [], forward: [] });
+
+  const leave = useCallback((id: string) => {
+    places.current.back.push(id);
+    places.current.forward = [];
+  }, []);
+
+  /** Goes to the nearest board that way which still exists. */
+  const walk = useCallback(
+    async (direction: Direction) => {
+      const other = direction === 'back' ? 'forward' : 'back';
+      const known = new Set((await boards.list()).map((b) => b.id));
+      for (;;) {
+        const id = places.current[direction].at(-1);
+        if (id === undefined) return;
+        const from = current.current.id;
+        if (known.has(id) && id !== from) {
+          if (!(await showAndWait(id))) return;
+          places.current[direction].pop();
+          places.current[other].push(from);
+          return;
+        }
+        places.current[direction].pop();
+      }
+    },
+    [boards, showAndWait],
+  );
+
   const open = useCallback(
     (board: BoardEntry) => {
-      if (board.id === current.current.id) return;
-      show(board.id, true).catch((e: unknown) => current.current.fail('The board did not open', e));
+      const from = current.current.id;
+      if (board.id === from) return;
+      show(board.id, true)
+        .then((moved) => {
+          if (moved) leave(from);
+        })
+        .catch((e: unknown) => current.current.fail('The board did not open', e));
     },
-    [show],
+    [show, leave],
   );
 
   const create = useCallback(async () => {
+    const from = current.current.id;
     if (!(await kept(current.current))) return;
     const made = await boards.create();
     setList(made.boards);
     channel.postMessage({ listed: true } satisfies Told);
-    await show(made.board.id, true);
-  }, [boards, channel, show]);
+    if (await show(made.board.id, true)) leave(from);
+  }, [boards, channel, show, leave]);
 
   const rename = useCallback(
     async (board: BoardEntry, next: string) => {
@@ -265,8 +300,9 @@ export function Whiteboard({
         const on = current.current;
         const answered = (async () => {
           if (event.name === 'drawn' && asked.elements) {
-            const drawnOn = await showFor(asked.board);
+            const drawnOn = await showAndWait(asked.board);
             if (!drawnOn) return;
+            if (asked.board !== on.id) leave(on.id);
             await drawnOn.whenReady();
             drawnOn.drawn(asked.elements);
             await platform.answer({ request });
@@ -294,7 +330,20 @@ export function Whiteboard({
           current.current.fail("An agent's request was not answered", e),
         );
       }),
-    [platform, boards, pictures, showFor],
+    [platform, boards, pictures, showAndWait, leave],
+  );
+
+  // Each step starts from the board the step before it showed, so steps run
+  // one after another.
+  const stepping = useRef(Promise.resolve());
+  useEffect(
+    () =>
+      platform.onHistory((direction) => {
+        stepping.current = stepping.current
+          .then(() => walk(direction))
+          .catch((e: unknown) => current.current.fail('The board did not open', e));
+      }),
+    [platform, walk],
   );
 
   // Excalidraw's picture tool picks its file through the platform.

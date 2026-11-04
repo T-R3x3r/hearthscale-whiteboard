@@ -52,6 +52,10 @@ reads the clipboard, which a view may not; a paste with the keys works.
 Copy to clipboard as PNG writes a picture to the clipboard under the
 manifest's `clipboard-write` permission.
 
+Go back and Go forward (`hearthscale/ui/history`) move between the boards
+this view showed, skipping a board that was deleted. The view keeps that
+history in memory. A board shown after a deletion leaves no step behind it.
+
 ## Where the boards live
 
 In the app's store, through the `store` extension, which the backend

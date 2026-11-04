@@ -48,7 +48,7 @@ async function start(): Promise<void> {
   style.textContent = `${excalidrawSheet}\n${sheet}`;
   document.head.append(style);
 
-  const app = new App({ name: 'Whiteboard', version: '2.1.0' }, {}, { autoResize: false });
+  const app = new App({ name: 'Whiteboard', version: '2.1.2' }, {}, { autoResize: false });
   const platform = new Platform(app);
   await app.connect(new PostMessageTransport(window.parent, window.parent));
   const boards = new Boards(platform);

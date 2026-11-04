@@ -15,13 +15,21 @@ export interface AppEvent {
   data: unknown;
 }
 
+/** The way of a step through the places the person moved between. */
+export type Direction = 'back' | 'forward';
+
 export class Platform {
   private hearer: ((event: AppEvent) => void) | null = null;
   /** The events that came before anything heard them. */
   private early: AppEvent[] = [];
+  private stepper: ((direction: Direction) => void) | null = null;
 
   constructor(private readonly app: App) {
     app.fallbackNotificationHandler = async ({ method, params }) => {
+      if (method === 'hearthscale/ui/history') {
+        this.stepper?.((params as unknown as { direction: Direction }).direction);
+        return;
+      }
       if (method !== 'hearthscale/events/event') return;
       const event = params as unknown as AppEvent;
       if (this.hearer) this.hearer(event);
@@ -46,6 +54,15 @@ export class Platform {
     for (const event of this.early.splice(0)) fn(event);
     return () => {
       if (this.hearer === fn) this.hearer = null;
+    };
+  }
+
+  /** Hears the person's Go back and Go forward; answers the function that
+   *  stops hearing them. */
+  onHistory(fn: (direction: Direction) => void): () => void {
+    this.stepper = fn;
+    return () => {
+      if (this.stepper === fn) this.stepper = null;
     };
   }
 
